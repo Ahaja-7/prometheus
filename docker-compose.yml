@@ -1,0 +1,45 @@
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: node-exporter
+    network_mode: host
+    pid: host
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro
+
+  prometheus:
+    image: prom/prometheus:v3.4.2
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9091:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - node-exporter
+
+  metric-agent:
+    build:
+      context: ./metric-agent
+    container_name: metric-agent
+    restart: unless-stopped
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      CHECK_INTERVAL_SECONDS: "30"
+      CPU_WARN_PERCENT: "80"
+      MEMORY_WARN_PERCENT: "80"
+      DISK_WARN_PERCENT: "85"
+      AGENT_PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus-data:
