@@ -9,14 +9,14 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from uvicorn import run as uvicorn_run
 
-
+#환경변수
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://prometheus:9090").rstrip("/")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120"))
 AGENT_PORT = int(os.getenv("AGENT_PORT", "8080"))
 
-
+#자원 사용률 계산
 QUERIES = {
     "cpu_percent": '100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)',
     "memory_percent": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
@@ -29,7 +29,7 @@ QUERIES = {
 
 app = FastAPI(title="Metric Agent", version="1.0.0")
 
-
+#바디정의
 class AnalysisRequest(BaseModel):
     query: str
 
@@ -86,7 +86,7 @@ def build_metric_catalog():
         },
     }
 
-
+#계획생성프롬프트
 def build_planner_prompt(user_query: str) -> str:
     metric_catalog = build_metric_catalog()
     return f"""당신은 Prometheus/PromQL 전문가입니다.
@@ -149,7 +149,7 @@ def query_prometheus_range(query: str, start: int, end: int, step_seconds: int):
         raise RuntimeError(f"Prometheus range query failed: {payload}")
     return payload["data"]["result"]
 
-
+#값 조회
 def extract_series_values(result):
     values = []
     for item in result:
@@ -163,7 +163,7 @@ def extract_series_values(result):
         values.append({"labels": metric, "value": round(parsed, 2)})
     return values
 
-
+#범위 조회
 def extract_range_series_values(result):
     series = []
     for item in result:
@@ -179,7 +179,7 @@ def extract_range_series_values(result):
             series.append({"labels": metric, "points": points})
     return series
 
-
+#계획 보정
 def normalize_query_plan(raw_plan, user_query: str) -> dict:
     if not isinstance(raw_plan, dict):
         raise ValueError("LLM 응답이 JSON 객체가 아닙니다.")
@@ -214,7 +214,7 @@ def build_fallback_plan(user_query: str) -> dict:
     lookback = "1h" if not is_range_question else ("7d" if "일주일" in lowered else "1d")
     return {"query_type": "range" if is_range_question else "instant", "promql": QUERIES[metric_name], "range": lookback, "step_seconds": 300, "metric_name": metric_name, "reasoning": "fallback"}
 
-
+#질문 -> promql 계획
 def generate_query_plan(user_query: str) -> dict:
     prompt = build_planner_prompt(user_query)
     try:
@@ -223,7 +223,7 @@ def generate_query_plan(user_query: str) -> dict:
     except Exception:
         return build_fallback_plan(user_query)
 
-
+#프로메테우스 조회
 def execute_query_plan(plan: dict) -> dict:
     query_type = plan["query_type"]
     query = plan["promql"]
@@ -241,7 +241,7 @@ def execute_query_plan(plan: dict) -> dict:
     series = extract_range_series_values(result)
     return {"mode": "range", "query": query, "range": plan.get("range"), "step_seconds": step_seconds, "series_count": len(series), "series": series}
 
-
+#쿼리생성, 실행
 def analyze_metrics_with_llm(user_query: str) -> dict:
     plan = generate_query_plan(user_query)
     raw = execute_query_plan(plan)
@@ -252,7 +252,7 @@ def analyze_metrics_with_llm(user_query: str) -> dict:
 async def root():
     return {"service": "metric-agent", "version": "1.0.0", "endpoints": {"analyze": "POST /analyze"}}
 
-
+#사용자 입력
 @app.post("/analyze")
 async def analyze(request: AnalysisRequest):
     if not request.query or len(request.query.strip()) == 0:
