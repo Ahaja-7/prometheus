@@ -1,8 +1,8 @@
-# Prometheus Node Metrics Stack with LLM Analysis
+# Prometheus Node Metrics Stack with LLM-assisted PromQL
 
-Docker Compose로 `node_exporter`, Prometheus, Ollama, metric-agent를 실행하는 구성입니다.
+Docker Compose로 `node_exporter`, Prometheus, Ollama, `metric-agent`를 실행하는 구성입니다.
 
-Qwen 8B LLM을 사용하여 사용자 질문 기반의 메트릭 분석을 제공합니다.
+이 리포지토리의 `metric-agent`는 사용자의 자연어 질문을 받아 LLM으로 PromQL 실행 계획을 생성하고, 해당 PromQL을 Prometheus에 실행하여 원시 결과(JSON)를 그대로 반환합니다.
 
 ## 실행
 
@@ -10,86 +10,72 @@ Qwen 8B LLM을 사용하여 사용자 질문 기반의 메트릭 분석을 제�
 docker compose up -d --build
 ```
 
-초기 실행 시 Ollama가 Qwen 8B 모델을 다운로드하는데 몇 분이 걸릴 수 있습니다.
+Ollama가 모델을 다운로드해야 하는 경우 초기 기동에 몇 분 소요될 수 있습니다.
 
-## 확인
+## 빠른 예시
 
 ```bash
-docker compose ps
-
-# 기본 상태 확인
-curl http://localhost:8080/health
-
-# 현재 메트릭 리포트 조회
-curl http://localhost:8080/metrics-report
-
-# LLM을 사용한 메트릭 분석 (POST 요청)
+# POST /analyze: 사용자 질문을 보내면 LLM이 PromQL을 생성하고 결과 JSON을 반환합니다.
 curl -X POST http://localhost:8080/analyze \
   -H "Content-Type: application/json" \
-  -d '{"query": "CPU 사용률이 높은지 확인해줘"}'
+  -d '{"query": "현재 cpu 사용량을 알려줘"}'
 ```
 
-Prometheus UI는 `http://localhost:9091`에서 확인할 수 있습니다.
+예시 응답(간소화):
 
-## 구성
-
-- `node-exporter`: 호스트 머신 CPU, 메모리, 디스크, 네트워크 메트릭 노출
-- `prometheus`: node_exporter 메트릭 수집
-- `ollama`: Qwen 8B LLM 모델 서빙 (http://localhost:11434)
-- `metric-agent`: 
-  - Prometheus 메트릭 수집 및 분석
-  - FastAPI 기반 REST API 제공
-  - LLM 기반 자연어 메트릭 분석
-
-## API 엔드포인트
-
-### GET /
-서비스 정보 및 사용 가능한 엔드포인트 조회
-
-### GET /health
-헬스 체크
-
-### GET /metrics-report
-최신 메트릭 리포트 조회
-
-응답 예시:
 ```json
 {
-  "status": "ok",
-  "metrics": {
-    "cpu_percent": [...],
-    "memory_percent": [...],
-    "disk_percent": [...]
+  "user_query": "현재 cpu 사용량을 알려줘",
+  "query_plan": {
+    "query_type": "instant",
+    "promql": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+    "range": "1h",
+    "step_seconds": 300,
+    "metric_name": "cpu_percent"
   },
-  "alerts": [...]
-}
-```
-
-### POST /analyze
-사용자 질문을 기반으로 메트릭 분석
-
-요청:
-```json
-{
-  "query": "메모리 사용률이 높은가?"
-}
-```
-
-응답:
-```json
-{
-  "user_query": "메모리 사용률이 높은가?",
-  "metrics": {...},
-  "analysis": "LLM이 생성한 분석 결과...",
+  "raw_result": {
+    "mode": "instant",
+    "query": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+    "result_count": 1,
+    "series": [
+      { "labels": { "instance": "node-exporter:9100" }, "value": 7.5 }
+    ]
+  },
   "timestamp": 1234567890
 }
 ```
 
+## 동작 원리
+
+- 클라이언트는 `/analyze`에 자연어 질문을 보냅니다.
+- 서버는 내부적으로 LLM(Ollama)에 질문을 전달해 PromQL 계획(JSON)을 생성합니다.
+- 생성된 `promql`을 Prometheus에 실행하고, Prometheus가 반환한 원시 시계열 JSON을 그대로 응답으로 돌려줍니다.
+
+LLM은 오직 PromQL을 제안하는 역할만 하며, 최종 수치는 Prometheus가 반환한 원시값을 신뢰해야 합니다.
+
+## 요청/응답 스키마
+
+- 요청 (`POST /analyze`)
+  - Content-Type: `application/json`
+  - Body: `{ "query": "사용자 자연어 질문" }`
+
+- 응답
+  - `user_query`: 원본 질문
+  - `query_plan`: LLM이 생성한 PromQL 실행 계획 (필드: `query_type`, `promql`, `range`, `step_seconds`, `metric_name`)
+  - `raw_result`: Prometheus에서 반환한 원시 실행 결과 (instant: `series` 배열, range: `series` 배열 각 항목에 `points` 포함)
+  - `timestamp`: 서버 응답 타임스탬프
+
+## 주의 및 운영 권장사항
+
+- 성능: LLM 생성 PromQL이 `range` 쿼리(특히 짧은 `step_seconds`)를 요구하면 Prometheus 쿼리 비용이 크게 증가할 수 있습니다. 필요 시 `step_seconds`를 크게 하고 기간을 적절히 제한하세요.
+- 안전: 임의 PromQL을 사용자에게 허용하면 Prometheus에 과부하를 줄 수 있습니다. 운영 환경에서는 쿼리 화이트리스트, 요청당 포인트/시리즈 제한, 또는 쿼리 실행 시간 제한을 권장합니다.
+- 신뢰성: LLM이 제안한 PromQL은 검토가 필요합니다. 항상 `raw_result`의 값을 신뢰하고, LLM이 결과를 해석해 제공하는 자연어 응답을 신뢰하지 마세요.
+
 ## 환경 변수
 
-- `PROMETHEUS_URL`: Prometheus URL (기본값: http://prometheus:9090)
-- `OLLAMA_URL`: Ollama URL (기본값: http://ollama:11434)
-- `OLLAMA_MODEL`: 사용할 Ollama 모델 (기본값: qwen:8b)
-- `CPU_WARN_PERCENT`: CPU 경고 임계치 (기본값: 80)
-- `MEMORY_WARN_PERCENT`: 메모리 경고 임계치 (기본값: 80)
-- `DISK_WARN_PERCENT`: 디스크 경고 임계치 (기본값: 85)
+- `PROMETHEUS_URL`: Prometheus URL (기본값: `http://prometheus:9090`)
+- `OLLAMA_URL`: Ollama URL (기본값: `http://localhost:11434`)
+- `OLLAMA_MODEL`: 사용할 Ollama 모델 (기본값: `qwen3:8b`)
+- `OLLAMA_TIMEOUT_SECONDS`: Ollama 요청 타임아웃(초) (기본값: `120`)
+- `AGENT_PORT`: metric-agent 포트 (기본값: `8080`)
+
