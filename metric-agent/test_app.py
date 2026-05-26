@@ -1,5 +1,6 @@
 import unittest
 
+from natural_language import is_natural_language_payload
 from promql import build_cpu_usage_query, build_disk_usage_query, build_memory_usage_query
 from service import MetricQueryService, RequestError, validate_payload
 
@@ -157,6 +158,19 @@ class ValidatePayloadTest(unittest.TestCase):
             validate_payload(payload)
 
         self.assertEqual(context.exception.code, "INVALID_FILTER")
+
+
+class NaturalLanguagePayloadTest(unittest.TestCase):
+    def test_detects_natural_language_query_payload(self):
+        self.assertTrue(is_natural_language_payload({"query": "현재 CPU 사용량 알려줘"}))
+
+    def test_does_not_treat_normalized_query_as_natural_language(self):
+        payload = query_payload()
+
+        self.assertFalse(is_natural_language_payload(payload))
+
+    def test_empty_query_is_not_natural_language(self):
+        self.assertFalse(is_natural_language_payload({"query": "   "}))
 
 
 class QueryBuilderTest(unittest.TestCase):

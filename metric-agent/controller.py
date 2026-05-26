@@ -4,10 +4,11 @@ from urllib.parse import urlparse
 
 import requests
 
+from natural_language import is_natural_language_payload
 from service import RequestError
 
 
-def create_handler(metric_query_service):
+def create_handler(metric_query_service, natural_language_translator=None):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             path = urlparse(self.path).path
@@ -23,6 +24,10 @@ def create_handler(metric_query_service):
                         "GET": ["/health"],
                         "POST": ["/query"],
                     },
+                    "query_formats": [
+                        {"queries": "normalized metric query JSON"},
+                        {"query": "natural language metric request"},
+                    ],
                 }
             )
 
@@ -45,6 +50,11 @@ def create_handler(metric_query_service):
             try:
                 body = self.rfile.read(content_length)
                 payload = json.loads(body)
+                if is_natural_language_payload(payload):
+                    if natural_language_translator is None:
+                        self.respond_error("NATURAL_LANGUAGE_DISABLED", "natural language queries are not configured", 500)
+                        return
+                    payload = natural_language_translator.translate(payload["query"])
                 self.respond(metric_query_service.handle_query(payload))
             except json.JSONDecodeError:
                 self.respond_error("INVALID_JSON", "request body must be valid JSON", 400)
