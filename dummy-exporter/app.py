@@ -1,12 +1,12 @@
 import os
 import time
 
-from prometheus_client import Gauge, start_http_server
+from prometheus_client import Counter, Gauge, start_http_server
 
 
 PORT = int(os.getenv("DUMMY_EXPORTER_PORT", "9100"))
 
-cpu_seconds_total = Gauge(
+cpu_seconds_total = Counter(
     "node_cpu_seconds_total",
     "Dummy cumulative CPU seconds in node_exporter format.",
     ["cpu", "mode"],
@@ -32,11 +32,10 @@ filesystem_size_bytes = Gauge(
 
 
 def set_dummy_metrics(tick):
-    idle_increment = 18
-    busy_increment = 6
+    idle_increment = 11.25
+    busy_increment = 3.75
     cpu_seconds_total.labels(cpu="0", mode="idle").inc(idle_increment)
     cpu_seconds_total.labels(cpu="0", mode="user").inc(busy_increment)
-    cpu_seconds_total.labels(cpu="0", mode="system").inc(2)
 
     total_memory = 16 * 1024 * 1024 * 1024
     used_ratio = 0.48 + ((tick % 12) * 0.01)

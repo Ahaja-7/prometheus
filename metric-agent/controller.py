@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
@@ -8,6 +9,9 @@ from natural_language import is_natural_language_payload
 from service import RequestError
 
 
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
 def create_handler(metric_query_service, natural_language_translator=None):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -15,6 +19,10 @@ def create_handler(metric_query_service, natural_language_translator=None):
 
             if path == "/health":
                 self.respond({"status": "ok"})
+                return
+
+            if path in {"/", "/index.html"}:
+                self.respond_html(STATIC_DIR / "index.html")
                 return
 
             self.respond(
@@ -72,6 +80,19 @@ def create_handler(metric_query_service, natural_language_translator=None):
             encoded = json.dumps(body, ensure_ascii=False, indent=2).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def respond_html(self, path, status=200):
+            try:
+                encoded = path.read_bytes()
+            except FileNotFoundError:
+                self.respond_error("NOT_FOUND", "page not found", 404)
+                return
+
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
             self.wfile.write(encoded)

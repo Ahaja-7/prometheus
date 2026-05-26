@@ -38,7 +38,8 @@ def label_matchers(filters, defaults=None, negative_matchers=None):
 
 def build_cpu_usage_query(filters):
     idle_matchers = label_matchers({"mode": "idle", **filters})
-    return f"100 - (avg by (instance) (rate(node_cpu_seconds_total{idle_matchers}[5m])) * 100)"
+    usage_query = f"100 - (avg by (instance) (rate(node_cpu_seconds_total{idle_matchers}[30s])) * 100)"
+    return f"clamp_min(clamp_max({usage_query}, 100), 0)"
 
 
 def build_memory_usage_query(filters):

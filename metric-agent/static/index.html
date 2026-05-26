@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Metric Query</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --text: #1f2328;
+        --muted: #636c76;
+        --border: #d0d7de;
+        --accent: #0969da;
+        --accent-dark: #0757b8;
+        --error: #b42318;
+        --code: #0f172a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 32px 0;
+      }
+
+      header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 14px;
+        min-height: 20px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      form {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 96px;
+        resize: vertical;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 12px;
+        font: inherit;
+        line-height: 1.45;
+      }
+
+      button {
+        align-self: stretch;
+        min-width: 92px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #ffffff;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.65;
+      }
+
+      button:not(:disabled):hover {
+        background: var(--accent-dark);
+      }
+
+      .output {
+        margin-top: 16px;
+      }
+
+      .charts {
+        display: grid;
+        gap: 14px;
+      }
+
+      .chart-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .chart-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .chart-title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .chart-meta {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .chart {
+        width: 100%;
+        height: 260px;
+        display: block;
+      }
+
+      .axis,
+      .grid {
+        stroke: #d8dee7;
+        stroke-width: 1;
+      }
+
+      .line {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 2.5;
+      }
+
+      .point {
+        fill: var(--accent);
+      }
+
+      .empty {
+        min-height: 420px;
+        display: grid;
+        place-items: center;
+        border: 1px dashed var(--border);
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .error {
+        color: var(--error);
+      }
+
+      @media (max-width: 720px) {
+        header {
+          display: block;
+        }
+
+        form {
+          grid-template-columns: 1fr;
+        }
+
+        button {
+          min-height: 44px;
+        }
+
+        .chart {
+          height: 220px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Metric Query</h1>
+        <div id="status" class="status">Ready</div>
+      </header>
+
+      <section class="panel">
+        <form id="query-form">
+          <textarea id="query" autocomplete="off" spellcheck="false">dummy-exporter:9100 서버의 최근 10분 CPU, 메모리, 디스크 사용량 알려줘</textarea>
+          <button id="submit" type="submit">Run</button>
+        </form>
+      </section>
+
+      <section class="output">
+        <div id="result" class="empty">No results</div>
+      </section>
+    </main>
+
+    <script>
+      const form = document.getElementById("query-form");
+      const input = document.getElementById("query");
+      const result = document.getElementById("result");
+      const statusText = document.getElementById("status");
+      const submit = document.getElementById("submit");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const query = input.value.trim();
+        if (!query) {
+          statusText.textContent = "Query is required";
+          statusText.className = "status error";
+          return;
+        }
+
+        submit.disabled = true;
+        statusText.textContent = "Running";
+        statusText.className = "status";
+
+        try {
+          const response = await fetch("/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query }),
+          });
+          const payload = await response.json();
+          renderResults(payload);
+          statusText.textContent = response.ok ? "Done" : `Error ${response.status}`;
+          statusText.className = response.ok ? "status" : "status error";
+        } catch (error) {
+          renderError(String(error));
+          statusText.textContent = "Request failed";
+          statusText.className = "status error";
+        } finally {
+          submit.disabled = false;
+        }
+      });
+
+      function renderResults(payload) {
+        if (payload.error) {
+          renderError(`${payload.error.code}: ${payload.error.message}`);
+          return;
+        }
+
+        const charts = [];
+        for (const item of payload.results || []) {
+          const series = item.result?.data?.result || [];
+          for (const serie of series) {
+            const values = (serie.values || [])
+              .map(([timestamp, value]) => [Number(timestamp), Number(value)])
+              .filter(([, value]) => Number.isFinite(value));
+            if (values.length > 0) {
+              charts.push({
+                title: `${item.request.server} · ${item.request.target}`,
+                meta: labelsText(serie.metric),
+                values,
+              });
+            }
+          }
+        }
+
+        if (charts.length === 0) {
+          result.className = "empty";
+          result.textContent = "No time series returned";
+          return;
+        }
+
+        result.className = "charts";
+        result.innerHTML = charts.map(renderChart).join("");
+      }
+
+      function renderError(message) {
+        result.className = "empty error";
+        result.textContent = message;
+      }
+
+      function labelsText(metric = {}) {
+        return Object.entries(metric)
+          .filter(([key]) => key !== "__name__" && key !== "instance")
+          .map(([key, value]) => `${key}=${value}`)
+          .join(", ");
+      }
+
+      function renderChart(chart) {
+        const width = 900;
+        const height = 260;
+        const padding = { top: 18, right: 18, bottom: 34, left: 54 };
+        const xs = chart.values.map(([timestamp]) => timestamp);
+        const ys = chart.values.map(([, value]) => value);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        const yPad = Math.max((maxY - minY) * 0.12, 1);
+        const lowY = minY - yPad;
+        const highY = maxY + yPad;
+
+        const x = (value) =>
+          padding.left +
+          ((value - minX) / Math.max(maxX - minX, 1)) * (width - padding.left - padding.right);
+        const y = (value) =>
+          height -
+          padding.bottom -
+          ((value - lowY) / Math.max(highY - lowY, 1)) * (height - padding.top - padding.bottom);
+
+        const points = chart.values.map(([timestamp, value]) => `${x(timestamp).toFixed(2)},${y(value).toFixed(2)}`);
+        const path = points
+          .map((point, index) => `${index === 0 ? "M" : "L"} ${point}`)
+          .join(" ");
+        const latest = ys[ys.length - 1].toFixed(2);
+        const yTicks = [minY, (minY + maxY) / 2, maxY];
+        const firstTime = formatTime(minX);
+        const lastTime = formatTime(maxX);
+
+        return `
+          <article class="chart-card">
+            <div class="chart-header">
+              <h2 class="chart-title">${escapeHtml(chart.title)}</h2>
+              <div class="chart-meta">${escapeHtml(chart.meta || `latest ${latest}%`)}</div>
+            </div>
+            <svg class="chart" viewBox="0 0 ${width} ${height}" role="img">
+              ${yTicks
+                .map(
+                  (tick) => `
+                    <line class="grid" x1="${padding.left}" y1="${y(tick)}" x2="${width - padding.right}" y2="${y(tick)}"></line>
+                    <text x="8" y="${y(tick) + 4}" fill="#636c76" font-size="12">${tick.toFixed(1)}</text>
+                  `
+                )
+                .join("")}
+              <line class="axis" x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}"></line>
+              <line class="axis" x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}"></line>
+              <path class="line" d="${path}"></path>
+              ${chart.values
+                .map(([timestamp, value]) => `<circle class="point" cx="${x(timestamp)}" cy="${y(value)}" r="3"></circle>`)
+                .join("")}
+              <text x="${padding.left}" y="${height - 10}" fill="#636c76" font-size="12">${firstTime}</text>
+              <text x="${width - padding.right}" y="${height - 10}" fill="#636c76" font-size="12" text-anchor="end">${lastTime}</text>
+            </svg>
+          </article>
+        `;
+      }
+
+      function formatTime(timestamp) {
+        return new Date(timestamp * 1000).toLocaleTimeString("ko-KR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+    </script>
+  </body>
+</html>
