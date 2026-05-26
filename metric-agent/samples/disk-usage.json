@@ -1,0 +1,17 @@
+{
+  "queries": [
+    {
+      "server": "host.docker.internal:9100",
+      "targets": ["disk"],
+      "range": {
+        "start": "2026-05-06T00:00:00+09:00",
+        "end": "2026-05-06T01:00:00+09:00",
+        "step": "60s"
+      },
+      "filters": {
+        "job": "node",
+        "mountpoint": "/"
+      }
+    }
+  ]
+}

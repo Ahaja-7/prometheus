@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/metric-agent/normalized-query.schema.json",
+  "title": "Metric Agent Normalized Query",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["queries"],
+  "properties": {
+    "queries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["server", "targets", "range"],
+        "properties": {
+          "server": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targets": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": ["cpu", "memory", "disk"]
+            }
+          },
+          "range": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end", "step"],
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "step": {
+                "type": "string",
+                "pattern": "^[0-9]+[smhd]$"
+              }
+            }
+          },
+          "filters": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": ["string", "number", "boolean"]
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": ["string", "number", "boolean"]
+                  }
+                }
+              ]
+            },
+            "propertyNames": {
+              "enum": ["device", "fstype", "job", "mountpoint"]
+            }
+          }
+        }
+      }
+    }
+  }
+}

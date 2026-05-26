@@ -2,6 +2,8 @@ services:
   node-exporter:
     image: prom/node-exporter:v1.9.1
     container_name: node-exporter
+    network_mode: host
+    pid: host
     restart: unless-stopped
     command:
       - --path.rootfs=/host
@@ -14,22 +16,13 @@ services:
     restart: unless-stopped
     ports:
       - "9091:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     depends_on:
       - node-exporter
-
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    environment:
-      - OLLAMA_HOST=0.0.0.0:11434
-    volumes:
-      - ollama-data:/root/.ollama
 
   metric-agent:
     build:
@@ -38,20 +31,11 @@ services:
     restart: unless-stopped
     environment:
       PROMETHEUS_URL: http://prometheus:9090
-      OLLAMA_URL: http://ollama:11434
-      OLLAMA_MODEL: qwen3:8b
-      OLLAMA_TIMEOUT_SECONDS: "120"
-      CHECK_INTERVAL_SECONDS: "30"
-      CPU_WARN_PERCENT: "80"
-      MEMORY_WARN_PERCENT: "80"
-      DISK_WARN_PERCENT: "85"
       AGENT_PORT: "8080"
     ports:
       - "8080:8080"
     depends_on:
       - prometheus
-      - ollama
 
 volumes:
   prometheus-data:
-  ollama-data:
